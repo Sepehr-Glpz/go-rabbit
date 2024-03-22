@@ -10,6 +10,7 @@ func NewConsumerHandler(connection IRabbitConnection, serializer IMessageSeriali
 		conn:       connection,
 		serializer: serializer,
 		consumers:  make(map[string]*consumer),
+		doneChan:   make(chan struct{}),
 	}
 }
 
@@ -18,6 +19,7 @@ type (
 		conn       IRabbitConnection
 		serializer IMessageSerializer
 		consumers  map[string]*consumer
+		doneChan   chan struct{}
 	}
 	ConsumeResult byte
 	ConsumerFunc  func(IConsumeActions) ConsumeResult
@@ -50,7 +52,10 @@ func (con *ConsumerHandler) Consume(queueName string, name string, exclusive boo
 	}
 
 	newConsumer := &consumer{
+		queueName:    queueName,
 		name:         name,
+		exclusive:    exclusive,
+		props:        props,
 		ConsumerFunc: handler,
 		cancel:       make(chan struct{}),
 		deliveries:   deliveries,
@@ -147,13 +152,43 @@ func (con *ConsumerHandler) Close() error {
 	return nil
 }
 
+func (con *ConsumerHandler) EnableConsumerRecovery() {
+	go func() {
+		for listen := true; listen; {
+			select {
+			case _, open := <-con.conn.NotifyReconnect():
+				{
+					if !open {
+						listen = false
+						break
+					}
+
+					for _, cons := range con.consumers {
+						for con.Consume(cons.queueName, cons.name, cons.exclusive, cons.props, cons.ConsumerFunc) != nil {
+							time.Sleep(time.Second)
+						}
+					}
+				}
+			case <-con.doneChan:
+				{
+					listen = false
+					break
+				}
+			}
+		}
+	}()
+}
+
 type (
 	consumeAction struct {
 		msg        *amqp.Delivery
 		serializer IMessageSerializer
 	}
 	consumer struct {
-		name string
+		queueName string
+		name      string
+		exclusive bool
+		props     amqp.Table
 		ConsumerFunc
 		cancel     chan struct{}
 		deliveries <-chan amqp.Delivery

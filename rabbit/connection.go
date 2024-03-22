@@ -7,16 +7,18 @@ import (
 )
 
 type Connection struct {
-	connection *amqp.Connection
-	config     Config
-	doneChan   chan struct{}
+	connection  *amqp.Connection
+	config      Config
+	doneChan    chan struct{}
+	reconnected chan struct{}
 }
 
 func NewConnection(config Config) *Connection {
 	var connection = &Connection{
-		connection: nil,
-		config:     config,
-		doneChan:   make(chan struct{}),
+		connection:  nil,
+		config:      config,
+		doneChan:    make(chan struct{}),
+		reconnected: make(chan struct{}),
 	}
 
 	return connection
@@ -47,6 +49,7 @@ func (conn *Connection) Connect() error {
 func (conn *Connection) Close() error {
 	if conn.connection != nil && !conn.connection.IsClosed() {
 		close(conn.doneChan)
+		close(conn.reconnected)
 		return conn.connection.Close()
 	}
 	return nil
@@ -73,6 +76,10 @@ func (conn *Connection) GetChannel() (*amqp.Channel, error) {
 	return conn.connection.Channel()
 }
 
+func (conn *Connection) NotifyReconnect() <-chan struct{} {
+	return conn.reconnected
+}
+
 func (conn *Connection) reconnect() error {
 	if conn.connection != nil && !conn.connection.IsClosed() {
 		if err := conn.connection.Close(); err != nil {
@@ -87,10 +94,10 @@ func (conn *Connection) listenReconnect() {
 	select {
 	case <-conn.connection.NotifyClose(make(chan *amqp.Error)):
 		{
-			for connErr := conn.reconnect(); connErr != nil; {
+			for conn.reconnect() != nil {
 				time.Sleep(conn.config.AutoReconnectInterval)
-				connErr = conn.reconnect()
 			}
+			conn.reconnected <- struct{}{}
 			break
 		}
 	case <-conn.doneChan:

@@ -8,6 +8,7 @@ type (
 		Close() error
 		GetUnderlyingConnection() *amqp.Connection
 		GetChannel() (*amqp.Channel, error)
+		NotifyReconnect() <-chan struct{}
 	}
 	IMessageSerializer interface {
 		Serialize(any) ([]byte, error)
@@ -20,6 +21,7 @@ type (
 		Consume(queueName string, name string, exclusive bool, props amqp.Table, handler ConsumerFunc) error
 		CancelConsumer(string) error
 		Close() error
+		EnableConsumerRecovery()
 	}
 	IRabbitClient interface {
 		Connect() error
