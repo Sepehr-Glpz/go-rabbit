@@ -156,7 +156,7 @@ func (con *ConsumerHandler) EnableConsumerRecovery() {
 	go func() {
 		for listen := true; listen; {
 			select {
-			case _, open := <-con.conn.NotifyReconnect():
+			case _, open := <-con.conn.notifyReconnect():
 				{
 					if !open {
 						listen = false

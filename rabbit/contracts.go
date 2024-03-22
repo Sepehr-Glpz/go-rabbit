@@ -8,7 +8,7 @@ type (
 		Close() error
 		GetUnderlyingConnection() *amqp.Connection
 		GetChannel() (*amqp.Channel, error)
-		NotifyReconnect() <-chan struct{}
+		notifyReconnect() <-chan struct{}
 	}
 	IMessageSerializer interface {
 		Serialize(any) ([]byte, error)
