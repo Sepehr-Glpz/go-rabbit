@@ -52,13 +52,13 @@ func (con *ConsumerHandler) Consume(queueName string, name string, exclusive boo
 	}
 
 	newConsumer := &consumer{
-		queueName:    queueName,
-		name:         name,
-		exclusive:    exclusive,
-		props:        props,
-		ConsumerFunc: handler,
-		cancel:       make(chan struct{}),
-		deliveries:   deliveries,
+		queueName:  queueName,
+		name:       name,
+		exclusive:  exclusive,
+		props:      props,
+		handler:    handler,
+		cancel:     make(chan struct{}),
+		deliveries: deliveries,
 	}
 	con.consumers[name] = newConsumer
 
@@ -82,7 +82,8 @@ func listenConsumer(consumer *consumer, serializer IMessageSerializer) {
 					msg:        &msg,
 					serializer: serializer,
 				}
-				switch consumer.ConsumerFunc(actions) {
+
+				switch consumer.handler(actions) {
 				case RejectRequeue:
 					{
 						for msg.Nack(false, true) != nil {
@@ -164,7 +165,7 @@ func (con *ConsumerHandler) EnableConsumerRecovery() {
 					}
 
 					for _, cons := range con.consumers {
-						for con.Consume(cons.queueName, cons.name, cons.exclusive, cons.props, cons.ConsumerFunc) != nil {
+						for con.Consume(cons.queueName, cons.name, cons.exclusive, cons.props, cons.handler) != nil {
 							time.Sleep(time.Second)
 						}
 					}
@@ -185,11 +186,11 @@ type (
 		serializer IMessageSerializer
 	}
 	consumer struct {
-		queueName string
-		name      string
-		exclusive bool
-		props     amqp.Table
-		ConsumerFunc
+		queueName  string
+		name       string
+		exclusive  bool
+		props      amqp.Table
+		handler    ConsumerFunc
 		cancel     chan struct{}
 		deliveries <-chan amqp.Delivery
 	}
