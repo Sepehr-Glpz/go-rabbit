@@ -3,6 +3,7 @@ package rabbit
 import (
 	"errors"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"sync"
 	"time"
 )
 
@@ -11,6 +12,7 @@ type Connection struct {
 	config      Config
 	doneChan    chan struct{}
 	reconnected chan struct{}
+	lock        sync.Locker
 }
 
 func NewConnection(config Config) *Connection {
@@ -19,6 +21,7 @@ func NewConnection(config Config) *Connection {
 		config:      config,
 		doneChan:    make(chan struct{}),
 		reconnected: make(chan struct{}),
+		lock:        new(sync.Mutex),
 	}
 
 	return connection
@@ -28,6 +31,9 @@ func (conn *Connection) Connect() error {
 	var (
 		err error
 	)
+
+	conn.lock.Lock()
+	defer conn.lock.Unlock()
 
 	if connection := conn.connection; connection != nil && !connection.IsClosed() {
 		return errors.New("already connected")
@@ -47,6 +53,9 @@ func (conn *Connection) Connect() error {
 }
 
 func (conn *Connection) Close() error {
+	conn.lock.Lock()
+	defer conn.lock.Unlock()
+
 	if conn.connection != nil && !conn.connection.IsClosed() {
 		close(conn.doneChan)
 		close(conn.reconnected)
@@ -73,18 +82,18 @@ func (conn *Connection) GetUnderlyingConnection() *amqp.Connection {
 }
 
 func (conn *Connection) GetChannel() (*amqp.Channel, error) {
+	conn.lock.Lock()
+	defer conn.lock.Unlock()
 	return conn.connection.Channel()
 }
 
-func (conn *Connection) NotifyReconnect() <-chan struct{} {
+func (conn *Connection) notifyReconnect() <-chan struct{} {
 	return conn.reconnected
 }
 
 func (conn *Connection) reconnect() error {
 	if conn.connection != nil && !conn.connection.IsClosed() {
-		if err := conn.connection.Close(); err != nil {
-			return err
-		}
+		return nil
 	}
 
 	return conn.Connect()

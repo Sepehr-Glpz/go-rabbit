@@ -2,6 +2,7 @@ package rabbit
 
 import (
 	amqp "github.com/rabbitmq/amqp091-go"
+	"sync"
 	"time"
 )
 
@@ -11,15 +12,18 @@ func NewConsumerHandler(connection IRabbitConnection, serializer IMessageSeriali
 		serializer: serializer,
 		consumers:  make(map[string]*consumer),
 		doneChan:   make(chan struct{}),
+		lock:       new(sync.RWMutex),
 	}
 }
 
 type (
 	ConsumerHandler struct {
-		conn       IRabbitConnection
-		serializer IMessageSerializer
-		consumers  map[string]*consumer
-		doneChan   chan struct{}
+		conn          IRabbitConnection
+		serializer    IMessageSerializer
+		consumers     map[string]*consumer
+		doneChan      chan struct{}
+		lock          *sync.RWMutex
+		isRecoverable bool
 	}
 	ConsumeResult byte
 	ConsumerFunc  func(IConsumeActions) ConsumeResult
@@ -38,10 +42,17 @@ func (con *ConsumerHandler) Consume(queueName string, name string, exclusive boo
 		deliveries <-chan amqp.Delivery
 	)
 
-	if cons, ok := con.consumers[name]; ok {
-		close(cons.cancel)
-		delete(con.consumers, name)
+	con.lock.Lock()
+	defer con.lock.Unlock()
+
+	if err = con.CancelConsumer(name); err != nil {
+		return err
 	}
+	//if cons, ok := con.consumers[name]; ok {
+	//	if err = cons.channel.Cancel(cons.name, false); err != nil {
+	//		return err
+	//	}
+	//}
 
 	if channel, err = con.conn.GetChannel(); err != nil {
 		return err
@@ -59,6 +70,7 @@ func (con *ConsumerHandler) Consume(queueName string, name string, exclusive boo
 		handler:    handler,
 		cancel:     make(chan struct{}),
 		deliveries: deliveries,
+		channel:    channel,
 	}
 	con.consumers[name] = newConsumer
 
@@ -121,13 +133,20 @@ func (con *ConsumerHandler) CancelConsumer(name string) error {
 		channel *amqp.Channel
 		err     error
 	)
-	if channel, err = con.conn.GetChannel(); err != nil {
-		return err
-	}
-	if err = channel.Cancel(name, false); err != nil {
-		return err
-	}
 	if cons, ok := con.consumers[name]; ok {
+		if channel, err = con.conn.GetChannel(); err != nil {
+			return err
+		}
+		defer func() {
+			_ = channel.Close()
+		}()
+
+		if err = channel.Cancel(name, false); err != nil {
+			return err
+		}
+		if err = cons.channel.Close(); err != nil {
+			return err
+		}
 		close(cons.cancel)
 		delete(con.consumers, name)
 	}
@@ -136,24 +155,29 @@ func (con *ConsumerHandler) CancelConsumer(name string) error {
 
 func (con *ConsumerHandler) Close() error {
 	var (
-		channel *amqp.Channel
-		err     error
+		err error
 	)
-	if channel, err = con.conn.GetChannel(); err != nil {
-		return err
-	}
+
+	con.lock.Lock()
+	defer con.lock.Unlock()
+
 	for _, cons := range con.consumers {
-		if err = channel.Cancel(cons.name, false); err != nil {
+		if err = con.CancelConsumer(cons.name); err != nil {
 			return err
 		}
-		close(cons.cancel)
-		delete(con.consumers, cons.name)
 	}
 
 	return nil
 }
 
 func (con *ConsumerHandler) EnableConsumerRecovery() {
+	con.lock.RLock()
+	defer con.lock.RUnlock()
+
+	if con.isRecoverable {
+		return
+	}
+
 	go func() {
 		for listen := true; listen; {
 			select {
@@ -178,6 +202,7 @@ func (con *ConsumerHandler) EnableConsumerRecovery() {
 			}
 		}
 	}()
+	con.isRecoverable = true
 }
 
 type (
@@ -193,6 +218,7 @@ type (
 		handler    ConsumerFunc
 		cancel     chan struct{}
 		deliveries <-chan amqp.Delivery
+		channel    *amqp.Channel
 	}
 )
 
