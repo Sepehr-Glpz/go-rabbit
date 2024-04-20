@@ -1,0 +1,31 @@
+
+RabbitMQ:
+  Host: 127.0.0.1
+  Port: 5672
+  Username: "sepehr"
+  Password: "123456"
+  VirtualHost: "/"
+  Endpoints:
+  Mapping:
+    Exchanges:
+      - Name: "test"
+        Id: 1
+        Type: "topic"
+        Durable: True
+        AutoDelete: True
+        Arguments: []
+
+    Queues:
+      - Name: "sepehring"
+        Id: 1
+        Durable: True
+        AutoDelete: False
+        Arguments: []
+
+    Bindings:
+      - FromExchangeId: 1
+        ToQueueId: 1
+        Keys:
+          - test.#
+          - thing.*
+        Arguments: []

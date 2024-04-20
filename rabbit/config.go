@@ -16,6 +16,38 @@ type Config struct {
 	Password              string
 	AutoReconnect         bool
 	AutoReconnectInterval time.Duration
+	Mapping               Mapping
+}
+
+type Mapping struct {
+	Exchanges []ExchangeDef
+	Queues    []QueueDef
+	Bindings  []BindingDef
+}
+
+type QueueDef struct {
+	Id         int
+	Name       string
+	Durable    bool
+	AutoDelete bool
+	Exclusive  bool
+	Arguments  map[string]any
+}
+
+type ExchangeDef struct {
+	Id         int
+	Name       string
+	Type       string
+	Durable    bool
+	AutoDelete bool
+	Arguments  map[string]any
+}
+
+type BindingDef struct {
+	FromExchangeId int
+	ToQueueId      int
+	Keys           []string
+	Arguments      map[string]any
 }
 
 type Endpoint struct {

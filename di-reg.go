@@ -3,7 +3,7 @@ package infrastructure
 import (
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
-	"test-5/infrastructure/rabbit"
+	"rabbit-test/infrastructure/rabbit"
 	"time"
 )
 
@@ -30,6 +30,10 @@ func ProvideInfrastructure() fx.Option {
 				rabbit.NewConsumerHandler,
 				fx.As(new(rabbit.IConsumer)),
 			),
+			fx.Annotate(
+				rabbit.NewTopology,
+				fx.As(new(rabbit.ITopology)),
+			),
 			NewConfig,
 		),
 	)
@@ -39,10 +43,14 @@ func NewConfig(config *viper.Viper) (rabbit.Config, error) {
 	rabbitConf := config.Sub("RabbitMQ")
 	var (
 		endpoints = make([]rabbit.Endpoint, 0)
+		mapping   = new(rabbit.Mapping)
 		err       error
 	)
 
 	if err = rabbitConf.UnmarshalKey("Endpoints", &endpoints); err != nil {
+		return *new(rabbit.Config), err
+	}
+	if err = rabbitConf.UnmarshalKey("Mapping", mapping); err != nil {
 		return *new(rabbit.Config), err
 	}
 
@@ -55,5 +63,6 @@ func NewConfig(config *viper.Viper) (rabbit.Config, error) {
 		Password:              rabbitConf.GetString("Password"),
 		AutoReconnect:         true,
 		AutoReconnectInterval: time.Second * 3,
+		Mapping:               *mapping,
 	}, nil
 }

@@ -28,10 +28,17 @@ type (
 		Close() error
 		Publisher() IPublisher
 		Consumer() IConsumer
+		Topology() ITopology
 	}
 	IConsumeActions interface {
 		GetMessageAs(any) error
 		GetRawBody() []byte
 		GetHeaders() amqp.Table
+	}
+	ITopology interface {
+		CommitAll() error
+		CommitExchanges() error
+		CommitQueues() error
+		CommitBindings() error
 	}
 )
